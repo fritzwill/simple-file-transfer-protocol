@@ -1,6 +1,6 @@
-CC= gcc
+CC=g++
 TARGETS=myftp
-CFLAGS=-std=gnu99
+CFLAGS=-std=c++11
 
 all: $(TARGETS)
 

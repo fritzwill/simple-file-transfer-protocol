@@ -12,9 +12,18 @@
 #include<time.h>
 #include<sys/time.h>
 #include<unistd.h>
+#include<dirent.h>
+#include<sys/stat.h>
+#include<stdint.h>
+#include<string>
+#include<iostream>
 
 #define BUF_SIZE 4096
 #define BACKLOGN 10      // number of pending connections queue will hold
+
+void sendWithCheck(int, const void *, int, int);
+int recvWithCheck(int, void *, int, int);
+void handleLS(int);
 
 int main(int argc, char * argv[]){
     int sockFd;
@@ -42,7 +51,6 @@ int main(int argc, char * argv[]){
     }
 
     // loop through getaddrinfo results and bind to first
-    printf("before bind\n");
     for (ptr = servInfo; ptr != NULL; ptr = ptr->ai_next){
         // make socket
         if ((sockFd = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol)) == -1){
@@ -54,7 +62,6 @@ int main(int argc, char * argv[]){
             perror("bad setsockopt");
             exit(1);
         }  
-        printf("after sock\n");
         // bind socket 
         if ((bind(sockFd, ptr->ai_addr, ptr->ai_addrlen) < 0)){
             close(sockFd);
@@ -63,7 +70,6 @@ int main(int argc, char * argv[]){
         }
         
         break; // break loop since we found a good bind
-        printf("after bind\n");
     }
 
     free(servInfo); // don't need the struct anymore
@@ -79,6 +85,8 @@ int main(int argc, char * argv[]){
         exit(1);
     }
 
+    printf("Accepting connections on port %s\n", argv[1]); 
+
     // accept an incoming connection
     int newFd; // need a new file descriptor for accept, gets populated during call
     socklen_t addr_size;
@@ -89,15 +97,19 @@ int main(int argc, char * argv[]){
         exit(1);
     }
    
+    printf("Connection established\n");
+    
     // after accept, lets start main loop to interact with client
     int numBytesRec;
     while(1){
-        if ((numBytesRec=recv(newFd, buf, sizeof(buf),0)) == -1){
-            perror("recieve error");
-            exit(1);
-        }
+        numBytesRec = recvWithCheck(newFd, buf, sizeof(buf),0);
         if (numBytesRec == 0) break; // no bytes recieved
-        printf("Server recieverd: %s\n", buf);
+        printf("Server recieverd: %s", buf);
+        if (!strncmp(buf, "EXIT", 4)){
+            printf("EXIT command received from client, shutting down\n");
+            break;
+        }
+        else if (!strncmp(buf, "LS", 2)) handleLS(newFd);
     }
     
     close(sockFd);
@@ -105,4 +117,61 @@ int main(int argc, char * argv[]){
     return 0;
 }
 
-        
+int recvWithCheck(int sockFd, void *buf, int len, int flags){
+    int numBytesRec;
+    if ((numBytesRec = recv(sockFd, buf, len, flags)) == -1){
+        perror("receive error");
+        close(sockFd);
+        exit(1);
+    }
+    if (numBytesRec == 0){
+        printf("recvWithCheck: zero bytes recieved\n");
+        close(sockFd);
+        exit(1);
+    }
+    return numBytesRec;
+}
+
+void sendWithCheck(int sockFd, const void *msg, int len, int flags){
+    if (send(sockFd, msg, len, flags) == -1){
+        perror("send error");
+        close(sockFd);
+        exit(1);
+    }
+}
+
+void handleLS(int sockFd){
+    DIR *d;
+    struct dirent *dir;
+    d = opendir(".");
+    struct stat fileStat;
+    std::string returnStr = "";
+    if (d) {
+        while ((dir = readdir(d)) != NULL){
+            if (stat(dir->d_name, &fileStat) < 0){
+                printf("handleLS: stat problem\n");
+                exit(1);
+            }
+            else{
+                returnStr.append((S_ISDIR(fileStat.st_mode)) ? "d" : "-");
+                returnStr.append((fileStat.st_mode & S_IRUSR) ? "r" : "-");
+                returnStr.append((fileStat.st_mode & S_IWUSR) ? "w" : "-");
+                returnStr.append((fileStat.st_mode & S_IXUSR) ? "x" : "-");
+                returnStr.append((fileStat.st_mode & S_IRGRP) ? "r" : "-");
+                returnStr.append((fileStat.st_mode & S_IWGRP) ? "w" : "-");
+                returnStr.append((fileStat.st_mode & S_IXGRP) ? "x" : "-");
+                returnStr.append((fileStat.st_mode & S_IROTH) ? "r" : "-");
+                returnStr.append((fileStat.st_mode & S_IWOTH) ? "w" : "-");
+                returnStr.append((fileStat.st_mode & S_IXOTH) ? "x" : "-");
+                returnStr = returnStr + " " + dir->d_name + "\n";
+            }
+        }
+        int32_t sizeStr = returnStr.length();
+        std::cout << sizeStr << std::endl;
+        sendWithCheck(sockFd, (char *)&sizeStr, sizeof(sizeStr), 0);
+        std::cout << "sending: " << returnStr.c_str() << std::endl; 
+        // Send ls
+        sendWithCheck(sockFd, returnStr.c_str(), sizeStr,0);
+        closedir(d);
+    }
+}
