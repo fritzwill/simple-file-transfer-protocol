@@ -17,13 +17,19 @@
 #include<stdint.h>
 #include<string>
 #include<iostream>
+#include<sstream>
+#include<fcntl.h>
+#include<fstream>
+#include<sys/sendfile.h>
 
+#define MAX_LINE 256
 #define BUF_SIZE 4096
 #define BACKLOGN 10      // number of pending connections queue will hold
 
 void sendWithCheck(int, const void *, int, int);
 int recvWithCheck(int, void *, int, int);
 void handleLS(int);
+void handleDL(int);
 
 int main(int argc, char * argv[]){
     int sockFd;
@@ -102,6 +108,7 @@ int main(int argc, char * argv[]){
     // after accept, lets start main loop to interact with client
     int numBytesRec;
     while(1){
+        memset(buf,0,sizeof(buf));
         numBytesRec = recvWithCheck(newFd, buf, sizeof(buf),0);
         if (numBytesRec == 0) break; // no bytes recieved
         printf("Server recieverd: %s", buf);
@@ -110,6 +117,8 @@ int main(int argc, char * argv[]){
             break;
         }
         else if (!strncmp(buf, "LS", 2)) handleLS(newFd);
+        else if (!strncmp(buf, "DL", 2)) handleDL(newFd);
+        
     }
     
     close(sockFd);
@@ -167,11 +176,77 @@ void handleLS(int sockFd){
             }
         }
         int32_t sizeStr = returnStr.length();
-        std::cout << sizeStr << std::endl;
         sendWithCheck(sockFd, (char *)&sizeStr, sizeof(sizeStr), 0);
-        std::cout << "sending: " << returnStr.c_str() << std::endl; 
+
         // Send ls
         sendWithCheck(sockFd, returnStr.c_str(), sizeStr,0);
         closedir(d);
     }
+}
+
+void handleDL(int sockFd){
+    char buf[MAX_LINE];
+
+    // parse client
+    recvWithCheck(sockFd, buf, sizeof(buf), 0);
+    std::string clientStr(buf);
+    std::istringstream iss(clientStr);
+    std::string fileName;
+    short int lenFile;
+    int32_t bytesInFile;
+    int fd;
+    iss >> lenFile;
+    iss >> fileName;
+    
+    // deal with file
+    FILE *fp;
+    fp = fopen(fileName.c_str(), "r");
+    if (fp){ // file exists
+        FILE *md5Ptr;
+        std::string command = "md5sum " + fileName;
+        md5Ptr = popen(command.c_str(), "r");
+        if (!md5Ptr){
+            printf("handleDL: failed popen\n");
+            exit(1);
+        }
+        memset(buf, (char)NULL, sizeof(buf));
+        if (fread(buf, sizeof(char), sizeof(char)*sizeof(buf), md5Ptr) <0){
+            printf("handleDL: failed fread\n");
+            exit(1);
+        }
+        if (pclose(md5Ptr) < 0){
+            printf("handleDL: pclose\n");
+            exit(1);
+        }
+        printf("md5 is: %s\n", buf);
+
+        struct stat s;
+        fd = fileno(fp); // need file descriptor for fstat and sendfile
+        if (fstat(fd, &s) == -1){
+            perror("handleDL: fstat");
+            exit(1);
+        }
+        bytesInFile = s.st_size;
+        printf("file size: %d\n", bytesInFile);
+        sendWithCheck(sockFd, &bytesInFile, sizeof(bytesInFile), 0);
+        
+    }
+    else { // file does not exist
+        int32_t returnVal = -1;
+        sendWithCheck(sockFd, (char *)&returnVal, sizeof(returnVal), 0);
+        return;
+    }
+    
+    // sends hash
+    sendWithCheck(sockFd, buf, sizeof(buf), 0);
+    
+/*              Haven't got this to work yet
+    // send the file
+    int remainData = bytesInFile;
+    int sentBytes = 0;
+    off_t offset = 0;
+    while(((sentBytes = sendfile(sockFd, fd, &offset, BUFSIZ)) > 0) && (remainData > 0)){
+        remainData -= sentBytes;
+    }
+   */ 
 }

@@ -13,12 +13,14 @@
 #include<sys/time.h>
 #include<unistd.h>
 #include<iostream>
+#include<sstream>
 
 #define MAX_LINE 256
 
 void sendWithCheck(int, const void *, int, int);
 int recvWithCheck(int, void *, int, int);
 void handleLS(int, const void *, int, int);
+void handleDL(int, const void *, int, int);
 
 int main(int argc, char * argv[]){
     int sockFd;
@@ -82,6 +84,7 @@ int main(int argc, char * argv[]){
         }
         
         if (!strncmp(buf, "LS", 2)) handleLS(sockFd, buf, lenSendString, 0);
+        else if (!strncmp(buf, "DL", 2)) handleDL(sockFd, buf, lenSendString, 0);
         printf("> ");
         fflush(stdout);
     }
@@ -124,7 +127,7 @@ void handleLS(int sockFd, const void *msg, int len, int flags){
     int remaining = sizeof(fileSize);
     int rc;
     while (remaining > 0){
-        rc = recvWithCheck(sockFd, data, remaining, 0);
+        rc = recvWithCheck(sockFd, data, remaining, flags);
         data += rc;
         remaining -= rc;
     }
@@ -135,10 +138,58 @@ void handleLS(int sockFd, const void *msg, int len, int flags){
     memset(buf, 0, sizeof(buf));
     std::string outStr = "";
     while (remaining > 0){
-        rc = recvWithCheck(sockFd, buf, remaining, 0);
+        rc = recvWithCheck(sockFd, buf, remaining, flags);
         outStr.append(buf);
         remaining -= rc;
     }
     outStr[fileSize] = '\0';
     printf("%s\r", outStr.c_str());
+}
+
+void handleDL(int sockFd, const void *msg, int len, int flags){
+    sendWithCheck(sockFd, msg, len, flags); // let server know 
+    std::string command((char *)msg);
+    std::istringstream iss(command);
+    std::string fileName;
+    iss >> fileName; // this should be string 'DL'
+    iss >> fileName; // this should be the full file path
+    std::cout<<fileName<<std::endl;
+    short int lenFile = fileName.length();
+    char buf[BUFSIZ];
+    sprintf(buf, "%d %s", lenFile, fileName.c_str());
+    
+    // sind file size and filename to server
+    sendWithCheck(sockFd, buf, sizeof(buf), flags);
+
+    // see what server says about that response
+    int32_t fileSize;
+    recvWithCheck(sockFd, &fileSize, sizeof(fileSize),0);
+    if (fileSize < 0){
+        printf("The file %s, does not exist on the server\n", fileName.c_str());
+        return;
+    }
+    
+    // now we need to receive md5 hash
+    memset(buf, (char)NULL, sizeof(buf));
+    recvWithCheck(sockFd, buf, sizeof(buf), 0);
+    std::string serverHash(buf);
+    std::cout<< serverHash <<std::endl;
+    std::cout<< "File size: " << fileSize << std::endl;
+/*                 Haven't got this to work yet
+    // time to get the file
+    FILE *receivedFile;
+    receivedFile = fopen(fileName.c_str(), "w");
+    if (receivedFile == NULL){
+        printf("handleDL: failed to open new file to write to\n");
+        exit(1);
+    }
+    int remainData = fileSize;
+    memset(buf, (char)NULL, sizeof(buf));
+    int len2;
+    while (((len2 = recvWithCheck(sockFd, buf, sizeof(buf), 0)) > 0) && (remainData > 0)){
+        fwrite(buf, sizeof(char), len2, receivedFile);
+        remainData -= len;
+    }
+    FILE *md5Ptr;
+*/
 }
