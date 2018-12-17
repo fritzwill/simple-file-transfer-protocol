@@ -2,7 +2,6 @@
 Uses C sockets to create a simple file transfer protocol (ftp) for a server and clients. The server is the filesytem from which we want to obtain files. The client simply gives various commands.
 
 ## Directory struture
-The file setup:
 **server/**
 * Makefile
 * myftpd.c
