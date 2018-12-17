@@ -1,6 +1,7 @@
 # simple-file-transfer-protocol
-Uses C sockets to create a simple file transfer protocol (ftp) server and clients
+Uses C sockets to create a simple file transfer protocol (ftp) for a server and clients. The server is the filesytem from which we want to obtain files. The client simply gives various commands.
 
+## Directory struture
 The file setup:
 **server/**
 * Makefile
@@ -10,17 +11,25 @@ The file setup:
 * Makefile
 * myftp.c
 
+## Using the files
 (run server first)
-server command: myftpd 41016
-
-client command: myftp student01.cse.nd.edu 41016
- >
+Server commands, run in server/ directory: 
+```
+$ make
+$ ./myftpd [port_num]
+Accepting connections on port [port_num]
+```
+Client commands, run in client/ directory: 
+```
+$ make
+$ ./myftp [host_name] [port_num]
+Connecting to [host_name] on port [port_num]
+Connection established
+>
+ ```
  
-Given the cursor, you can currently run:
+## Current Funtionality
+Given the cursor (>), you can currently run:
 LS - works 
 EXIT - works
 DL filename - detects when no file, sends hash from server to client, sends file length
-
-Also, there is commented out code at then end. I thin that is the correct approach to both send from the server and receive at the client. If i run the programs with a valid filename, then the client downloads part of the file (16K vs 24K)
-
-
