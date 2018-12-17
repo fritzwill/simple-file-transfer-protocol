@@ -30,6 +30,6 @@ Connection established
  
 ## Current Funtionality
 Given the cursor (>), you can currently run:
-LS - works 
-EXIT - works
-DL filename - detects when no file, sends hash from server to client, sends file length
+* LS - works 
+* EXIT - works
+* DL filename - detects when no file, sends hash from server to client, sends file length
